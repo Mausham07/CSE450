@@ -1,0 +1,160 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 0,
+  "metadata": {
+    "colab": {
+      "provenance": [],
+      "authorship_tag": "ABX9TyMQEeCxe1TtXEmER8cl15Nb",
+      "include_colab_link": true
+    },
+    "kernelspec": {
+      "name": "python3",
+      "display_name": "Python 3"
+    },
+    "language_info": {
+      "name": "python"
+    }
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "view-in-github",
+        "colab_type": "text"
+      },
+      "source": [
+        "<a href=\"https://colab.research.google.com/github/Mausham07/CSE450/blob/main/Module_3\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 8,
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "mJtf97PtnAMt",
+        "outputId": "f7f4b8f3-7a79-476a-a60a-c123616d2473"
+      },
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "RMSE: $129,948.80\n",
+            "R²: 0.8880\n",
+            "          feature  importance\n",
+            "8           grade    0.387106\n",
+            "5      waterfront    0.161935\n",
+            "2     sqft_living    0.145818\n",
+            "12            lat    0.068828\n",
+            "6            view    0.048075\n",
+            "13           long    0.032415\n",
+            "18      house_age    0.026633\n",
+            "1       bathrooms    0.024728\n",
+            "14  sqft_living15    0.018151\n",
+            "11        zipcode    0.014442\n",
+            "Holdout predictions saved as 'housing_predictions.csv'\n"
+          ]
+        }
+      ],
+      "source": [
+        "\n",
+        "import pandas as pd\n",
+        "import numpy as np\n",
+        "from sklearn.model_selection import train_test_split\n",
+        "from sklearn.metrics import mean_squared_error, r2_score\n",
+        "from xgboost import XGBRegressor\n",
+        "\n",
+        "# Load Data\n",
+        "url = \"https://raw.githubusercontent.com/byui-cse/cse450-course/master/data/housing.csv\"\n",
+        "df = pd.read_csv(url)\n",
+        "\n",
+        "# Feature Engineering\n",
+        "# Convert sale date\n",
+        "df['date'] = pd.to_datetime(df['date'])\n",
+        "df['sale_year'] = df['date'].dt.year\n",
+        "df['sale_month'] = df['date'].dt.month\n",
+        "\n",
+        "# House age\n",
+        "df['house_age'] = df['sale_year'] - df['yr_built']\n",
+        "# Years since renovation (0 if never renovated)\n",
+        "df['years_since_renovation'] = np.where(df['yr_renovated'] == 0, df['house_age'], df['sale_year'] - df['yr_renovated'])\n",
+        "\n",
+        "# Drop non-predictive columns\n",
+        "df = df.drop(columns=['id', 'date', 'yr_built', 'yr_renovated'])\n",
+        "\n",
+        "# Optional: price per sqft for insight (not used as feature here)\n",
+        "# df['price_per_sqft'] = df['price'] / df['sqft_living']\n",
+        "\n",
+        "\n",
+        "# Train/Test Split\n",
+        "X = df.drop(columns=['price'])\n",
+        "y = df['price']  # raw price to improve RMSE\n",
+        "\n",
+        "X_train, X_test, y_train, y_test = train_test_split(\n",
+        "    X, y, test_size=0.2, random_state=42\n",
+        ")\n",
+        "\n",
+        "\n",
+        "# XGBoost Model (Better Fit)\n",
+        "model = XGBRegressor(\n",
+        "    n_estimators=700,    # more trees for better fit\n",
+        "    max_depth=6,         # allow more complexity\n",
+        "    learning_rate=0.05,\n",
+        "    subsample=0.8,\n",
+        "    colsample_bytree=0.8,\n",
+        "    objective='reg:squarederror',\n",
+        "    random_state=42\n",
+        ")\n",
+        "\n",
+        "model.fit(X_train, y_train)\n",
+        "\n",
+        "\n",
+        "# Predictions\n",
+        "y_pred = model.predict(X_test)\n",
+        "\n",
+        "\n",
+        "# Evaluation\n",
+        "rmse = np.sqrt(mean_squared_error(y_test, y_pred))\n",
+        "r2 = r2_score(y_test, y_pred)\n",
+        "\n",
+        "print(f\"RMSE: ${rmse:,.2f}\")\n",
+        "print(f\"R²: {r2:.4f}\")\n",
+        "\n",
+        "\n",
+        "# Feature Importance\n",
+        "feature_importance = pd.DataFrame({\n",
+        "    'feature': X.columns,\n",
+        "    'importance': model.feature_importances_\n",
+        "}).sort_values(by='importance', ascending=False)\n",
+        "\n",
+        "print(feature_importance.head(10))\n",
+        "\n",
+        "\n",
+        "# Generate Holdout Predictions\n",
+        "holdout_url = \"https://raw.githubusercontent.com/byui-cse/cse450-course/master/data/housing_holdout_test.csv\"\n",
+        "holdout_df = pd.read_csv(holdout_url)\n",
+        "\n",
+        "# Apply same feature engineering to holdout\n",
+        "holdout_df['date'] = pd.to_datetime(holdout_df['date'])\n",
+        "holdout_df['sale_year'] = holdout_df['date'].dt.year\n",
+        "holdout_df['sale_month'] = holdout_df['date'].dt.month\n",
+        "holdout_df['house_age'] = holdout_df['sale_year'] - holdout_df['yr_built']\n",
+        "holdout_df['years_since_renovation'] = np.where(holdout_df['yr_renovated'] == 0, holdout_df['house_age'], holdout_df['sale_year'] - holdout_df['yr_renovated'])\n",
+        "\n",
+        "holdout_df = holdout_df.drop(columns=['id', 'date', 'yr_built', 'yr_renovated'])\n",
+        "holdout_X = holdout_df\n",
+        "\n",
+        "holdout_pred = model.predict(holdout_X)\n",
+        "\n",
+        "# Save CSV for submission\n",
+        "submission = pd.DataFrame({'price': holdout_pred})\n",
+        "submission.to_csv('housing_predictions.csv', index=False)\n",
+        "print(\"Holdout predictions saved as 'housing_predictions.csv'\")\n",
+        "\n",
+        "#mapbox\n"
+      ]
+    }
+  ]
+}
